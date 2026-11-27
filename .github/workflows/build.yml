@@ -1,0 +1,45 @@
+name: Build Wine WoW64
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build.yml'
+      - 'patches/**'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential flex bison gcc-mingw-w64 g++-mingw-w64 pkg-config gettext libfreetype-dev libfontconfig-dev libx11-dev libxext-dev libxrender-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev libxxf86vm-dev libgl-dev libegl-dev libgnutls28-dev libpulse-dev libasound2-dev libvulkan-dev libudev-dev libusb-1.0-0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libunwind-dev libxkbcommon-dev
+      - name: Fetch and patch Wine
+        run: |
+          git clone --depth 1 --branch wine-11.14 https://github.com/wine-mirror/wine.git wine-src
+          cd wine-src
+          git apply --check ../patches/crypt32-sha256.patch
+          git apply ../patches/crypt32-sha256.patch
+          git diff --check
+      - name: Configure and compile
+        run: |
+          mkdir wine-build
+          cd wine-build
+          ../wine-src/configure --enable-archs=i386,x86_64 --prefix=/opt/wine-mta
+          make -j"$(nproc)"
+      - name: Package
+        run: |
+          make -C wine-build install DESTDIR="$PWD/stage"
+          mkdir -p out
+          tar -C stage/opt -cJf out/wine-mta-11.14-amd64-wow64.tar.xz wine-mta
+          tar --exclude=.git -C wine-src -cJf out/wine-mta-11.14-source.tar.xz .
+          cd out
+          sha256sum *.tar.xz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wine-mta-11.14
+          path: out/
+          compression-level: 0
